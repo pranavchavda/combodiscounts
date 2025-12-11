@@ -294,26 +294,48 @@ export const action = async ({ request }) => {
 
   // Save config action
   const configString = formData.get("config");
+  const discountId = formData.get("discountId");
 
   try {
     const bundleConfig = JSON.parse(configString);
 
-    // First, get the current app installation ID
-    const appInstallationResponse = await admin.graphql(`
+    // First, get the current app installation ID and existing combo config
+    const appDataResponse = await admin.graphql(`
       query {
         currentAppInstallation {
           id
+          comboConfig: metafield(namespace: "christmas-combos", key: "config") {
+            value
+          }
         }
       }
     `);
-    const appInstallationData = await appInstallationResponse.json();
-    const ownerId = appInstallationData?.data?.currentAppInstallation?.id;
+    const appData = await appDataResponse.json();
+    const ownerId = appData?.data?.currentAppInstallation?.id;
 
     if (!ownerId) {
       return json({ error: "Could not find app installation" }, { status: 400 });
     }
 
-    const response = await admin.graphql(`
+    // Get existing combo rules config
+    let existingConfig = { comboRules: [] };
+    const existingConfigValue = appData?.data?.currentAppInstallation?.comboConfig?.value;
+    if (existingConfigValue) {
+      try {
+        existingConfig = JSON.parse(existingConfigValue);
+      } catch (e) {
+        console.error("Failed to parse existing config:", e);
+      }
+    }
+
+    // Merge bundle config into the full config
+    const fullConfig = {
+      ...existingConfig,
+      bundleConfig: bundleConfig,
+    };
+
+    // Save to app installation metafield (for UI state)
+    const appMetafieldResponse = await admin.graphql(`
       mutation SetAppMetafield($metafields: [MetafieldsSetInput!]!) {
         metafieldsSet(metafields: $metafields) {
           metafields {
@@ -337,14 +359,57 @@ export const action = async ({ request }) => {
             value: JSON.stringify(bundleConfig),
             ownerId: ownerId,
           },
+          {
+            namespace: "christmas-combos",
+            key: "config",
+            type: "json",
+            value: JSON.stringify(fullConfig),
+            ownerId: ownerId,
+          },
         ],
       },
     });
 
-    const result = await response.json();
+    const appResult = await appMetafieldResponse.json();
 
-    if (result.data?.metafieldsSet?.userErrors?.length > 0) {
-      return json({ error: result.data.metafieldsSet.userErrors[0].message }, { status: 400 });
+    if (appResult.data?.metafieldsSet?.userErrors?.length > 0) {
+      return json({ error: appResult.data.metafieldsSet.userErrors[0].message }, { status: 400 });
+    }
+
+    // If we have a discount ID, also update the discount's metafield so the function can read it
+    if (discountId) {
+      const discountUpdateResponse = await admin.graphql(`
+        mutation UpdateDiscountMetafield($id: ID!, $metafields: [MetafieldsSetInput!]!) {
+          discountAutomaticAppUpdate(id: $id, automaticAppDiscount: {
+            metafields: $metafields
+          }) {
+            automaticAppDiscount {
+              discountId
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+      `, {
+        variables: {
+          id: discountId,
+          metafields: [
+            {
+              namespace: "$app:christmas-combos",
+              key: "config",
+              type: "json",
+              value: JSON.stringify(fullConfig),
+            },
+          ],
+        },
+      });
+
+      const discountResult = await discountUpdateResponse.json();
+      if (discountResult.data?.discountAutomaticAppUpdate?.userErrors?.length > 0) {
+        console.error("Failed to update discount metafield:", discountResult.data.discountAutomaticAppUpdate.userErrors);
+      }
     }
 
     return json({ success: true, message: "Bundle configuration saved!" });
@@ -451,8 +516,11 @@ export default function BundleDiscounts() {
     const formData = new FormData();
     formData.append("config", JSON.stringify(bundleConfig));
     formData.append("actionType", "saveConfig");
+    if (discount?.id) {
+      formData.append("discountId", discount.id);
+    }
     submit(formData, { method: "post" });
-  }, [bundleConfig, submit]);
+  }, [bundleConfig, discount, submit]);
 
   const handleCreateDiscount = useCallback(() => {
     const formData = new FormData();

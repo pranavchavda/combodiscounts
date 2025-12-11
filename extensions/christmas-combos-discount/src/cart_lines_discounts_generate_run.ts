@@ -229,41 +229,41 @@ export function cartLinesDiscountsGenerateRun(
 
   // ===== BUNDLE DISCOUNTS =====
   // Apply discounts to bundle products when the parent product is in cart
+  // The discount percentage is read from the CHILD (bundle product) via custom.bundle_discount
+  // or falls back to the global default
   const defaultBundleDiscount = config.bundleConfig?.defaultBundleDiscount ?? 0;
 
-  if (defaultBundleDiscount > 0 || cartLinesWithBundles.some(l => l.bundleDiscount !== null)) {
-    // Get all product IDs in cart for quick lookup
-    const cartProductIds = new Set(cartLinesWithBundles.map(l => l.productId));
+  // Get all product IDs in cart for quick lookup
+  const cartProductIds = new Set(cartLinesWithBundles.map(l => l.productId));
 
-    // Find "parent" products that have bundle_products metafield
-    const parentProducts = cartLinesWithBundles.filter(
-      l => l.bundleProductIds.length > 0 && !l.hasExcludedTag
-    );
+  // Find "parent" products that have bundle_products metafield
+  const parentProducts = cartLinesWithBundles.filter(
+    l => l.bundleProductIds.length > 0 && !l.hasExcludedTag
+  );
 
-    for (const parent of parentProducts) {
-      // Determine discount for this parent's bundle
-      const discountPercent = parent.bundleDiscount ?? defaultBundleDiscount;
+  for (const parent of parentProducts) {
+    // Find bundle products that are also in the cart
+    for (const bundleProductId of parent.bundleProductIds) {
+      if (!cartProductIds.has(bundleProductId)) continue;
 
-      if (discountPercent <= 0) continue;
+      // Find the cart line(s) for this bundle product
+      const bundleLines = cartLinesWithBundles.filter(
+        l => l.productId === bundleProductId && !l.hasExcludedTag && !discountedLineIds.has(l.id)
+      );
 
-      // Find bundle products that are also in the cart
-      for (const bundleProductId of parent.bundleProductIds) {
-        if (!cartProductIds.has(bundleProductId)) continue;
+      for (const bundleLine of bundleLines) {
+        // Read discount from the CHILD product, fall back to default
+        const discountPercent = bundleLine.bundleDiscount ?? defaultBundleDiscount;
 
-        // Find the cart line(s) for this bundle product
-        const bundleLines = cartLinesWithBundles.filter(
-          l => l.productId === bundleProductId && !l.hasExcludedTag && !discountedLineIds.has(l.id)
-        );
+        if (discountPercent <= 0) continue;
 
-        for (const bundleLine of bundleLines) {
-          discountedLineIds.add(bundleLine.id);
+        discountedLineIds.add(bundleLine.id);
 
-          candidates.push({
-            message: `Bundle Discount: ${discountPercent}% off`,
-            targets: [{ cartLine: { id: bundleLine.id } }],
-            value: { percentage: { value: discountPercent } },
-          });
-        }
+        candidates.push({
+          message: `Bundle Discount: ${discountPercent}% off`,
+          targets: [{ cartLine: { id: bundleLine.id } }],
+          value: { percentage: { value: discountPercent } },
+        });
       }
     }
   }
