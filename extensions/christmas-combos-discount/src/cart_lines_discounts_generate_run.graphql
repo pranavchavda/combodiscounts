@@ -1,0 +1,37 @@
+query CartInput {
+  cart {
+    lines {
+      id
+      quantity
+      cost {
+        subtotalAmount {
+          amount
+        }
+      }
+      merchandise {
+        __typename
+        ... on ProductVariant {
+          id
+          product {
+            id
+            vendor
+            productType
+            hasAnyTag(tags: ["no-combo-discount", "clearance", "bundle", "openbox"])
+            bundleProducts: metafield(namespace: "custom", key: "bundle_products") {
+              value
+            }
+            bundleDiscount: metafield(namespace: "custom", key: "bundle_discount") {
+              value
+            }
+          }
+        }
+      }
+    }
+  }
+  discount {
+    discountClasses
+    metafield(namespace: "$app:christmas-combos", key: "config") {
+      jsonValue
+    }
+  }
+}
