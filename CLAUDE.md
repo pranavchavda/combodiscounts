@@ -78,3 +78,36 @@ The function reads combo rules from the discount's metafield, matches products b
 ## Environment Variables
 
 Required: `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_APP_URL`, `SCOPES`
+
+## Production Deployment
+
+**Server:** 139.177.197.236 (SSH as root)
+
+**App Directory:** `/var/www/christmas-combos` (NOT `/root/christmas-combos`)
+
+**Process Manager:** PM2 with process name `christmas-combos`
+
+### Deployment Steps
+
+```bash
+# 1. Sync files to production (exclude node_modules, .git, .env, db files)
+rsync -avz --delete \
+  --exclude 'node_modules' \
+  --exclude '.git' \
+  --exclude '.env' \
+  --exclude 'prisma/*.db' \
+  --exclude 'prisma/*.db-journal' \
+  ./ root@139.177.197.236:/var/www/christmas-combos/
+
+# 2. SSH into server, rebuild, and restart
+ssh root@139.177.197.236 "cd /var/www/christmas-combos && npm install && npm run build && pm2 restart christmas-combos"
+```
+
+### Useful PM2 Commands
+
+```bash
+pm2 list                      # Show all processes
+pm2 logs christmas-combos     # View app logs
+pm2 restart christmas-combos  # Restart the app
+pm2 describe christmas-combos # Show process details (check exec cwd!)
+```
