@@ -28,12 +28,6 @@ export const loader = async ({ request }) => {
             ... on DiscountAutomaticApp {
               title
               status
-              appDiscountType {
-                functionId
-                app {
-                  title
-                }
-              }
             }
           }
         }
@@ -44,18 +38,21 @@ export const loader = async ({ request }) => {
   const discountsData = await discountsResponse.json();
   const discountNodes = discountsData?.data?.discountNodes?.nodes || [];
 
-  // Find combo discount - check by title OR by app name
-  const comboDiscount = discountNodes.find(node => {
+  // Find combo discount by title - "Christmas Combo Deal" or similar
+  // Prioritize ACTIVE discounts over expired/inactive ones
+  const comboMatchingDiscounts = discountNodes.filter(node => {
     const title = node.discount?.title?.toLowerCase() || "";
-    const appTitle = node.discount?.appDiscountType?.app?.title?.toLowerCase() || "";
-    // Match combo discount but not bundle
-    return (title.includes("christmas") || title.includes("combo") || appTitle.includes("christmas")) &&
-           !title.includes("bundle");
+    return (title.includes("christmas") || title.includes("combo")) && !title.includes("bundle");
   });
+  const comboDiscount = comboMatchingDiscounts.find(n => n.discount?.status === "ACTIVE")
+    || comboMatchingDiscounts[comboMatchingDiscounts.length - 1];
 
-  const bundleDiscount = discountNodes.find(node =>
+  // Find bundle discount - prioritize ACTIVE ones
+  const bundleMatchingDiscounts = discountNodes.filter(node =>
     node.discount?.title?.toLowerCase().includes("bundle")
   );
+  const bundleDiscount = bundleMatchingDiscounts.find(n => n.discount?.status === "ACTIVE")
+    || bundleMatchingDiscounts[bundleMatchingDiscounts.length - 1];
 
   return json({
     comboDiscount: comboDiscount ? {

@@ -61,12 +61,6 @@ export const loader = async ({ request }) => {
               startsAt
               endsAt
               discountClass
-              appDiscountType {
-                functionId
-                app {
-                  title
-                }
-              }
             }
           }
         }
@@ -77,14 +71,17 @@ export const loader = async ({ request }) => {
   const discountsData = await discountsResponse.json();
   const discountNodes = discountsData?.data?.discountNodes?.nodes || [];
 
-  // Find our Christmas Combos discount - check by title OR by app name
-  const christmasComboDiscount = discountNodes.find(node => {
+  // Find our Christmas Combos discount by title - "Christmas Combo Deal" or similar
+  // First, try to find an ACTIVE one, then fall back to any matching discount
+  const matchingDiscounts = discountNodes.filter(node => {
     const title = node.discount?.title?.toLowerCase() || "";
-    const appTitle = node.discount?.appDiscountType?.app?.title?.toLowerCase() || "";
-    return title.includes("christmas") ||
-           title.includes("combo") ||
-           appTitle.includes("christmas");
+    // Match "Christmas Combo Deal" or variations, but not "Bundle"
+    return (title.includes("christmas") || title.includes("combo")) && !title.includes("bundle");
   });
+
+  // Prefer active discounts, then sort by ID (newer ones have higher IDs)
+  const christmasComboDiscount = matchingDiscounts.find(n => n.discount?.status === "ACTIVE")
+    || matchingDiscounts[matchingDiscounts.length - 1]; // Fall back to most recent
 
   return json({
     config,
@@ -95,7 +92,7 @@ export const loader = async ({ request }) => {
       status: christmasComboDiscount.discount.status,
       startsAt: christmasComboDiscount.discount.startsAt,
       endsAt: christmasComboDiscount.discount.endsAt,
-    } : null
+    } : null,
   });
 };
 
@@ -853,6 +850,7 @@ export default function ChristmasCombos() {
               onDeactivate={handleDeactivateDiscount}
               isSubmitting={isSubmitting}
             />
+
           </Layout.Section>
 
           <Layout.Section>
