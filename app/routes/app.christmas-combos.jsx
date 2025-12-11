@@ -51,7 +51,7 @@ export const loader = async ({ request }) => {
   // Get existing discounts that use our function
   const discountsResponse = await admin.graphql(`
     query {
-      discountNodes(first: 10, query: "type:app") {
+      discountNodes(first: 50, query: "type:app") {
         nodes {
           id
           discount {
@@ -61,6 +61,12 @@ export const loader = async ({ request }) => {
               startsAt
               endsAt
               discountClass
+              appDiscountType {
+                functionId
+                app {
+                  title
+                }
+              }
             }
           }
         }
@@ -71,10 +77,14 @@ export const loader = async ({ request }) => {
   const discountsData = await discountsResponse.json();
   const discountNodes = discountsData?.data?.discountNodes?.nodes || [];
 
-  // Find our Christmas Combos discount
-  const christmasComboDiscount = discountNodes.find(node =>
-    node.discount?.title?.toLowerCase().includes("christmas combo")
-  );
+  // Find our Christmas Combos discount - check by title OR by app name
+  const christmasComboDiscount = discountNodes.find(node => {
+    const title = node.discount?.title?.toLowerCase() || "";
+    const appTitle = node.discount?.appDiscountType?.app?.title?.toLowerCase() || "";
+    return title.includes("christmas") ||
+           title.includes("combo") ||
+           appTitle.includes("christmas");
+  });
 
   return json({
     config,

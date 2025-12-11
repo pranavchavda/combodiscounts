@@ -24,7 +24,7 @@ export default function App() {
         </Link>
         <Link to="/app/christmas-combos">Christmas Combos</Link>
         <Link to="/app/bundle-discounts">Bundle Discounts</Link>
-        <Link to="/app/additional">Additional page</Link>
+        <Link to="/app/christmas-combos-help">Help</Link>
       </NavMenu>
       <Outlet />
     </AppProvider>

@@ -1,322 +1,217 @@
-import { useEffect } from "react";
-import { useFetcher } from "@remix-run/react";
+import { json } from "@remix-run/node";
+import { useLoaderData, Link } from "@remix-run/react";
 import {
   Page,
   Layout,
-  Text,
   Card,
-  Button,
   BlockStack,
-  Box,
-  List,
-  Link,
+  Text,
   InlineStack,
+  Badge,
+  Box,
+  Icon,
 } from "@shopify/polaris";
-import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
+import { TitleBar } from "@shopify/app-bridge-react";
+import { DiscountIcon, ProductIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }) => {
-  await authenticate.admin(request);
-
-  return null;
-};
-
-export const action = async ({ request }) => {
   const { admin } = await authenticate.admin(request);
-  const color = ["Red", "Orange", "Yellow", "Green"][
-    Math.floor(Math.random() * 4)
-  ];
-  const response = await admin.graphql(
-    `#graphql
-      mutation populateProduct($product: ProductCreateInput!) {
-        productCreate(product: $product) {
-          product {
-            id
-            title
-            handle
-            status
-            variants(first: 10) {
-              edges {
-                node {
-                  id
-                  price
-                  barcode
-                  createdAt
+
+  // Get discount status
+  const discountsResponse = await admin.graphql(`
+    query {
+      discountNodes(first: 50, query: "type:app") {
+        nodes {
+          id
+          discount {
+            ... on DiscountAutomaticApp {
+              title
+              status
+              appDiscountType {
+                functionId
+                app {
+                  title
                 }
               }
             }
           }
         }
-      }`,
-    {
-      variables: {
-        product: {
-          title: `${color} Snowboard`,
-        },
-      },
-    },
-  );
-  const responseJson = await response.json();
-  const product = responseJson.data.productCreate.product;
-  const variantId = product.variants.edges[0].node.id;
-  const variantResponse = await admin.graphql(
-    `#graphql
-    mutation shopifyRemixTemplateUpdateVariant($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-      productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-        productVariants {
-          id
-          price
-          barcode
-          createdAt
-        }
       }
-    }`,
-    {
-      variables: {
-        productId: product.id,
-        variants: [{ id: variantId, price: "100.00" }],
-      },
-    },
-  );
-  const variantResponseJson = await variantResponse.json();
+    }
+  `);
 
-  return {
-    product: responseJson.data.productCreate.product,
-    variant: variantResponseJson.data.productVariantsBulkUpdate.productVariants,
-  };
+  const discountsData = await discountsResponse.json();
+  const discountNodes = discountsData?.data?.discountNodes?.nodes || [];
+
+  // Find combo discount - check by title OR by app name
+  const comboDiscount = discountNodes.find(node => {
+    const title = node.discount?.title?.toLowerCase() || "";
+    const appTitle = node.discount?.appDiscountType?.app?.title?.toLowerCase() || "";
+    // Match combo discount but not bundle
+    return (title.includes("christmas") || title.includes("combo") || appTitle.includes("christmas")) &&
+           !title.includes("bundle");
+  });
+
+  const bundleDiscount = discountNodes.find(node =>
+    node.discount?.title?.toLowerCase().includes("bundle")
+  );
+
+  return json({
+    comboDiscount: comboDiscount ? {
+      status: comboDiscount.discount.status,
+      title: comboDiscount.discount.title,
+    } : null,
+    bundleDiscount: bundleDiscount ? {
+      status: bundleDiscount.discount.status,
+      title: bundleDiscount.discount.title,
+    } : null,
+  });
 };
 
-export default function Index() {
-  const fetcher = useFetcher();
-  const shopify = useAppBridge();
-  const isLoading =
-    ["loading", "submitting"].includes(fetcher.state) &&
-    fetcher.formMethod === "POST";
-  const productId = fetcher.data?.product?.id.replace(
-    "gid://shopify/Product/",
-    "",
+function DiscountCard({ title, description, status, linkTo, icon }) {
+  const isActive = status === "ACTIVE";
+  const statusBadge = status ? (
+    <Badge tone={isActive ? "success" : "attention"}>
+      {isActive ? "Active" : "Inactive"}
+    </Badge>
+  ) : (
+    <Badge tone="warning">Not Created</Badge>
   );
 
-  useEffect(() => {
-    if (productId) {
-      shopify.toast.show("Product created");
-    }
-  }, [productId, shopify]);
-  const generateProduct = () => fetcher.submit({}, { method: "POST" });
+  return (
+    <Card>
+      <BlockStack gap="400">
+        <InlineStack align="space-between" blockAlign="center">
+          <InlineStack gap="300" blockAlign="center">
+            <Box
+              background="bg-surface-secondary"
+              padding="300"
+              borderRadius="200"
+            >
+              <Icon source={icon} tone="base" />
+            </Box>
+            <BlockStack gap="100">
+              <Text variant="headingMd" as="h2">
+                {title}
+              </Text>
+              <Text as="p" tone="subdued" variant="bodySm">
+                {description}
+              </Text>
+            </BlockStack>
+          </InlineStack>
+          {statusBadge}
+        </InlineStack>
+        <Link to={linkTo}>
+          <Box paddingBlockStart="200">
+            <Text as="span" variant="bodyMd" fontWeight="medium">
+              Configure →
+            </Text>
+          </Box>
+        </Link>
+      </BlockStack>
+    </Card>
+  );
+}
+
+export default function Index() {
+  const { comboDiscount, bundleDiscount } = useLoaderData();
 
   return (
     <Page>
-      <TitleBar title="Remix app template">
-        <button variant="primary" onClick={generateProduct}>
-          Generate a product
-        </button>
-      </TitleBar>
+      <TitleBar title="Combo & Bundle Discounts" />
       <BlockStack gap="500">
         <Layout>
           <Layout.Section>
             <Card>
-              <BlockStack gap="500">
-                <BlockStack gap="200">
-                  <Text as="h2" variant="headingMd">
-                    Congrats on creating a new Shopify app 🎉
-                  </Text>
-                  <Text variant="bodyMd" as="p">
-                    This embedded app template uses{" "}
-                    <Link
-                      url="https://shopify.dev/docs/apps/tools/app-bridge"
-                      target="_blank"
-                      removeUnderline
-                    >
-                      App Bridge
-                    </Link>{" "}
-                    interface examples like an{" "}
-                    <Link url="/app/additional" removeUnderline>
-                      additional page in the app nav
-                    </Link>
-                    , as well as an{" "}
-                    <Link
-                      url="https://shopify.dev/docs/api/admin-graphql"
-                      target="_blank"
-                      removeUnderline
-                    >
-                      Admin GraphQL
-                    </Link>{" "}
-                    mutation demo, to provide a starting point for app
-                    development.
-                  </Text>
-                </BlockStack>
-                <BlockStack gap="200">
-                  <Text as="h3" variant="headingMd">
-                    Get started with products
-                  </Text>
-                  <Text as="p" variant="bodyMd">
-                    Generate a product with GraphQL and get the JSON output for
-                    that product. Learn more about the{" "}
-                    <Link
-                      url="https://shopify.dev/docs/api/admin-graphql/latest/mutations/productCreate"
-                      target="_blank"
-                      removeUnderline
-                    >
-                      productCreate
-                    </Link>{" "}
-                    mutation in our API references.
-                  </Text>
-                </BlockStack>
-                <InlineStack gap="300">
-                  <Button loading={isLoading} onClick={generateProduct}>
-                    Generate a product
-                  </Button>
-                  {fetcher.data?.product && (
-                    <Button
-                      url={`shopify:admin/products/${productId}`}
-                      target="_blank"
-                      variant="plain"
-                    >
-                      View product
-                    </Button>
-                  )}
-                </InlineStack>
-                {fetcher.data?.product && (
-                  <>
-                    <Text as="h3" variant="headingMd">
-                      {" "}
-                      productCreate mutation
-                    </Text>
-                    <Box
-                      padding="400"
-                      background="bg-surface-active"
-                      borderWidth="025"
-                      borderRadius="200"
-                      borderColor="border"
-                      overflowX="scroll"
-                    >
-                      <pre style={{ margin: 0 }}>
-                        <code>
-                          {JSON.stringify(fetcher.data.product, null, 2)}
-                        </code>
-                      </pre>
-                    </Box>
-                    <Text as="h3" variant="headingMd">
-                      {" "}
-                      productVariantsBulkUpdate mutation
-                    </Text>
-                    <Box
-                      padding="400"
-                      background="bg-surface-active"
-                      borderWidth="025"
-                      borderRadius="200"
-                      borderColor="border"
-                      overflowX="scroll"
-                    >
-                      <pre style={{ margin: 0 }}>
-                        <code>
-                          {JSON.stringify(fetcher.data.variant, null, 2)}
-                        </code>
-                      </pre>
-                    </Box>
-                  </>
-                )}
+              <BlockStack gap="300">
+                <Text variant="headingLg" as="h1">
+                  Welcome to Combo & Bundle Discounts
+                </Text>
+                <Text as="p" tone="subdued">
+                  Automatically apply discounts when customers purchase product combinations.
+                  Configure combo rules for espresso machines + grinders, or set up dynamic
+                  bundle discounts based on product metafields.
+                </Text>
               </BlockStack>
             </Card>
           </Layout.Section>
+
+          <Layout.Section>
+            <BlockStack gap="400">
+              <Text variant="headingMd" as="h2">
+                Discount Features
+              </Text>
+
+              <DiscountCard
+                title="Christmas Combos"
+                description="Discounts for espresso machine + grinder vendor combinations"
+                status={comboDiscount?.status}
+                linkTo="/app/christmas-combos"
+                icon={DiscountIcon}
+              />
+
+              <DiscountCard
+                title="Bundle Discounts"
+                description="Discounts for products in custom.bundle_products metafield"
+                status={bundleDiscount?.status}
+                linkTo="/app/bundle-discounts"
+                icon={ProductIcon}
+              />
+            </BlockStack>
+          </Layout.Section>
+
           <Layout.Section variant="oneThird">
-            <BlockStack gap="500">
+            <BlockStack gap="400">
               <Card>
-                <BlockStack gap="200">
-                  <Text as="h2" variant="headingMd">
-                    App template specs
+                <BlockStack gap="300">
+                  <Text variant="headingMd" as="h3">
+                    Quick Start
                   </Text>
                   <BlockStack gap="200">
-                    <InlineStack align="space-between">
-                      <Text as="span" variant="bodyMd">
-                        Framework
-                      </Text>
-                      <Link
-                        url="https://remix.run"
-                        target="_blank"
-                        removeUnderline
-                      >
-                        Remix
-                      </Link>
-                    </InlineStack>
-                    <InlineStack align="space-between">
-                      <Text as="span" variant="bodyMd">
-                        Database
-                      </Text>
-                      <Link
-                        url="https://www.prisma.io/"
-                        target="_blank"
-                        removeUnderline
-                      >
-                        Prisma
-                      </Link>
-                    </InlineStack>
-                    <InlineStack align="space-between">
-                      <Text as="span" variant="bodyMd">
-                        Interface
-                      </Text>
-                      <span>
-                        <Link
-                          url="https://polaris.shopify.com"
-                          target="_blank"
-                          removeUnderline
-                        >
-                          Polaris
-                        </Link>
-                        {", "}
-                        <Link
-                          url="https://shopify.dev/docs/apps/tools/app-bridge"
-                          target="_blank"
-                          removeUnderline
-                        >
-                          App Bridge
-                        </Link>
-                      </span>
-                    </InlineStack>
-                    <InlineStack align="space-between">
-                      <Text as="span" variant="bodyMd">
-                        API
-                      </Text>
-                      <Link
-                        url="https://shopify.dev/docs/api/admin-graphql"
-                        target="_blank"
-                        removeUnderline
-                      >
-                        GraphQL API
-                      </Link>
-                    </InlineStack>
+                    <Text as="p" variant="bodySm">
+                      1. Configure your discount rules
+                    </Text>
+                    <Text as="p" variant="bodySm">
+                      2. Create the discount in Shopify
+                    </Text>
+                    <Text as="p" variant="bodySm">
+                      3. Activate the discount
+                    </Text>
+                    <Text as="p" variant="bodySm">
+                      4. Customers automatically see discounts at checkout
+                    </Text>
                   </BlockStack>
                 </BlockStack>
               </Card>
+
               <Card>
-                <BlockStack gap="200">
-                  <Text as="h2" variant="headingMd">
-                    Next steps
+                <BlockStack gap="300">
+                  <Text variant="headingMd" as="h3">
+                    Excluded Products
                   </Text>
-                  <List>
-                    <List.Item>
-                      Build an{" "}
-                      <Link
-                        url="https://shopify.dev/docs/apps/getting-started/build-app-example"
-                        target="_blank"
-                        removeUnderline
-                      >
-                        {" "}
-                        example app
-                      </Link>{" "}
-                      to get started
-                    </List.Item>
-                    <List.Item>
-                      Explore Shopify’s API with{" "}
-                      <Link
-                        url="https://shopify.dev/docs/apps/tools/graphiql-admin-api"
-                        target="_blank"
-                        removeUnderline
-                      >
-                        GraphiQL
-                      </Link>
-                    </List.Item>
-                  </List>
+                  <Text as="p" variant="bodySm" tone="subdued">
+                    Products with these tags won't receive discounts:
+                  </Text>
+                  <InlineStack gap="200" wrap>
+                    <Badge tone="warning">no-combo-discount</Badge>
+                    <Badge tone="warning">clearance</Badge>
+                    <Badge tone="warning">bundle</Badge>
+                    <Badge tone="warning">openbox</Badge>
+                  </InlineStack>
+                </BlockStack>
+              </Card>
+
+              <Card>
+                <BlockStack gap="300">
+                  <Text variant="headingMd" as="h3">
+                    Need Help?
+                  </Text>
+                  <Link to="/app/christmas-combos-help">
+                    <Text as="span" variant="bodySm">
+                      View documentation →
+                    </Text>
+                  </Link>
                 </BlockStack>
               </Card>
             </BlockStack>
