@@ -18,41 +18,53 @@ import { authenticate } from "../shopify.server";
 export const loader = async ({ request }) => {
   const { admin } = await authenticate.admin(request);
 
-  // Get discount status
-  const discountsResponse = await admin.graphql(`
-    query {
-      discountNodes(first: 50, query: "type:app") {
-        nodes {
-          id
-          discount {
-            ... on DiscountAutomaticApp {
-              title
-              status
+  // Query both discounts directly by title (parallel requests)
+  const [comboResponse, bundleResponse] = await Promise.all([
+    admin.graphql(`
+      query {
+        discountNodes(first: 5, query: "title:Christmas Combo Deal") {
+          nodes {
+            id
+            discount {
+              ... on DiscountAutomaticApp {
+                title
+                status
+              }
             }
           }
         }
       }
-    }
-  `);
+    `),
+    admin.graphql(`
+      query {
+        discountNodes(first: 5, query: "title:Bundle Discount") {
+          nodes {
+            id
+            discount {
+              ... on DiscountAutomaticApp {
+                title
+                status
+              }
+            }
+          }
+        }
+      }
+    `)
+  ]);
 
-  const discountsData = await discountsResponse.json();
-  const discountNodes = discountsData?.data?.discountNodes?.nodes || [];
+  const [comboData, bundleData] = await Promise.all([
+    comboResponse.json(),
+    bundleResponse.json()
+  ]);
 
-  // Find combo discount by title - "Christmas Combo Deal" or similar
-  // Prioritize ACTIVE discounts over expired/inactive ones
-  const comboMatchingDiscounts = discountNodes.filter(node => {
-    const title = node.discount?.title?.toLowerCase() || "";
-    return (title.includes("christmas") || title.includes("combo")) && !title.includes("bundle");
-  });
-  const comboDiscount = comboMatchingDiscounts.find(n => n.discount?.status === "ACTIVE")
-    || comboMatchingDiscounts[comboMatchingDiscounts.length - 1];
+  const comboNodes = comboData?.data?.discountNodes?.nodes || [];
+  const bundleNodes = bundleData?.data?.discountNodes?.nodes || [];
 
-  // Find bundle discount - prioritize ACTIVE ones
-  const bundleMatchingDiscounts = discountNodes.filter(node =>
-    node.discount?.title?.toLowerCase().includes("bundle")
-  );
-  const bundleDiscount = bundleMatchingDiscounts.find(n => n.discount?.status === "ACTIVE")
-    || bundleMatchingDiscounts[bundleMatchingDiscounts.length - 1];
+  // Prioritize ACTIVE discount if multiple exist
+  const comboDiscount = comboNodes.find(n => n.discount?.status === "ACTIVE")
+    || comboNodes[comboNodes.length - 1];
+  const bundleDiscount = bundleNodes.find(n => n.discount?.status === "ACTIVE")
+    || bundleNodes[bundleNodes.length - 1];
 
   return json({
     comboDiscount: comboDiscount ? {
