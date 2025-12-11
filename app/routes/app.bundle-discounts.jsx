@@ -48,7 +48,7 @@ export const loader = async ({ request }) => {
   // Get existing discounts that use our function
   const discountsResponse = await admin.graphql(`
     query {
-      discountNodes(first: 10, query: "type:app") {
+      discountNodes(first: 50, query: "type:app") {
         nodes {
           id
           discount {
@@ -68,10 +68,12 @@ export const loader = async ({ request }) => {
   const discountsData = await discountsResponse.json();
   const discountNodes = discountsData?.data?.discountNodes?.nodes || [];
 
-  // Find our Bundle discount
-  const bundleDiscount = discountNodes.find(node =>
+  // Find our Bundle discount - prioritize ACTIVE ones
+  const bundleMatchingDiscounts = discountNodes.filter(node =>
     node.discount?.title?.toLowerCase().includes("bundle")
   );
+  const bundleDiscount = bundleMatchingDiscounts.find(n => n.discount?.status === "ACTIVE")
+    || bundleMatchingDiscounts[bundleMatchingDiscounts.length - 1];
 
   return json({
     bundleConfig,
