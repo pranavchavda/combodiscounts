@@ -15,6 +15,7 @@ import {
   Divider,
   Banner,
   Modal,
+  Select,
 } from "@shopify/polaris";
 import { PlusIcon, DeleteIcon, EditIcon } from "@shopify/polaris-icons";
 import { TitleBar } from "@shopify/app-bridge-react";
@@ -28,7 +29,7 @@ export const loader = async ({ request }) => {
     query {
       currentAppInstallation {
         id
-        metafield(namespace: "christmas-combos", key: "config") {
+        metafield(namespace: "$app:christmas-combos", key: "config") {
           value
         }
       }
@@ -63,6 +64,9 @@ export const loader = async ({ request }) => {
               discountClass
             }
           }
+          metafield(namespace: "$app:christmas-combos", key: "config") {
+            value
+          }
         }
       }
     }
@@ -75,8 +79,18 @@ export const loader = async ({ request }) => {
   const christmasComboDiscount = discountNodes.find(n => n.discount?.status === "ACTIVE")
     || discountNodes[discountNodes.length - 1];
 
+  // Try to get config from discount metafield first, fall back to app installation
+  let finalConfig = config;
+  if (christmasComboDiscount?.metafield?.value) {
+    try {
+      finalConfig = JSON.parse(christmasComboDiscount.metafield.value);
+    } catch (e) {
+      console.error("Failed to parse discount metafield:", e);
+    }
+  }
+
   return json({
-    config,
+    config: finalConfig,
     appInstallationId,
     discount: christmasComboDiscount ? {
       id: christmasComboDiscount.id,
@@ -300,9 +314,13 @@ export const action = async ({ request }) => {
 
   // Save config action
   const configString = formData.get("config");
+  const discountId = formData.get("discountId");
+
+  console.log("Saving config - discountId:", discountId);
 
   try {
     const config = JSON.parse(configString);
+    console.log("Config to save:", JSON.stringify(config, null, 2));
 
     // First, get the current app installation ID
     const appInstallationResponse = await admin.graphql(`
@@ -317,6 +335,28 @@ export const action = async ({ request }) => {
 
     if (!ownerId) {
       return json({ error: "Could not find app installation" }, { status: 400 });
+    }
+
+    // Build the metafields array with app installation metafield
+    const metafieldsToSet = [
+      {
+        namespace: "$app:christmas-combos",
+        key: "config",
+        type: "json",
+        value: JSON.stringify(config),
+        ownerId: ownerId,
+      },
+    ];
+
+    // If we have a discount ID, also set the metafield on the discount
+    if (discountId) {
+      metafieldsToSet.push({
+        namespace: "$app:christmas-combos",
+        key: "config",
+        type: "json",
+        value: JSON.stringify(config),
+        ownerId: discountId,
+      });
     }
 
     const response = await admin.graphql(`
@@ -335,24 +375,20 @@ export const action = async ({ request }) => {
       }
     `, {
       variables: {
-        metafields: [
-          {
-            namespace: "christmas-combos",
-            key: "config",
-            type: "json",
-            value: JSON.stringify(config),
-            ownerId: ownerId,
-          },
-        ],
+        metafields: metafieldsToSet,
       },
     });
 
     const result = await response.json();
 
+    console.log("Metafield save result:", JSON.stringify(result, null, 2));
+
     if (result.data?.metafieldsSet?.userErrors?.length > 0) {
+      console.error("Metafield errors:", result.data.metafieldsSet.userErrors);
       return json({ error: result.data.metafieldsSet.userErrors[0].message }, { status: 400 });
     }
 
+    console.log("Metafields set successfully on:", metafieldsToSet.map(m => `${m.ownerId} (namespace: ${m.namespace}, key: ${m.key})`));
     return json({ success: true, message: "Configuration saved!" });
   } catch (e) {
     console.error("Error saving config:", e);
@@ -395,7 +431,15 @@ function AddVendorInput({ placeholder, onAdd }) {
 
   const handleAdd = useCallback(() => {
     if (value.trim()) {
-      onAdd(value.trim());
+      const vendors = value
+        .split(",")
+        .map((v) => v.trim())
+        .filter((v) => v.length > 0);
+
+      vendors.forEach((vendor) => {
+        onAdd(vendor);
+      });
+
       setValue("");
     }
   }, [value, onAdd]);
@@ -454,9 +498,11 @@ function ComboRuleCard({ rule, index, onUpdate, onDelete }) {
   }, [rule, index, onUpdate]);
 
   const updateDiscount = useCallback((value) => {
+    const newPercentage = parseFloat(value) || 0;
+    console.log("updateDiscount called with value:", value, "newPercentage:", newPercentage, "rule:", rule);
     onUpdate(index, {
       ...rule,
-      discountPercentage: parseFloat(value) || 0,
+      discountPercentage: newPercentage,
     });
   }, [rule, index, onUpdate]);
 
@@ -760,12 +806,17 @@ export default function ChristmasCombos() {
   const isSubmitting = navigation.state === "submitting";
 
   const updateRule = useCallback((index, updatedRule) => {
-    setConfig((prev) => ({
-      ...prev,
-      comboRules: prev.comboRules.map((rule, i) =>
-        i === index ? updatedRule : rule
-      ),
-    }));
+    console.log("updateRule called with index:", index, "updatedRule:", updatedRule);
+    setConfig((prev) => {
+      const newConfig = {
+        ...prev,
+        comboRules: prev.comboRules.map((rule, i) =>
+          i === index ? updatedRule : rule
+        ),
+      };
+      console.log("New config after update:", newConfig);
+      return newConfig;
+    });
   }, []);
 
   const deleteRule = useCallback((index) => {
@@ -783,11 +834,15 @@ export default function ChristmasCombos() {
   }, []);
 
   const handleSave = useCallback(() => {
+    console.log("handleSave called with config:", config);
     const formData = new FormData();
     formData.append("config", JSON.stringify(config));
     formData.append("actionType", "saveConfig");
+    if (discount?.id) {
+      formData.append("discountId", discount.id);
+    }
     submit(formData, { method: "post" });
-  }, [config, submit]);
+  }, [config, discount, submit]);
 
   const handleCreateDiscount = useCallback(() => {
     const formData = new FormData();

@@ -155,26 +155,31 @@ export function cartLinesDiscountsGenerateRun(
     (a, b) => b.discountPercentage - a.discountPercentage,
   );
 
+  // Pre-compute Sets of vendors for each rule to avoid repeated .some() checks
+  const ruleLookups = sortedRules.map(rule => ({
+    rule,
+    machineVendors: new Set(rule.machineVendors.map(v => v.toLowerCase())),
+    grinderVendors: new Set(rule.grinderVendors.map(v => v.toLowerCase())),
+  }));
+
   // Find machine lines - must be product type "Espresso Machines" AND vendor in machineVendors
   const machineLines = cartLines.filter(line => {
     if (!line.vendor) return false;
-    if (line.productType?.toLowerCase() !== 'espresso machines') return false;
-    return sortedRules.some(rule =>
-      rule.machineVendors.some(
-        mv => mv.toLowerCase() === line.vendor?.toLowerCase(),
-      ),
-    );
+    const typeMatch = line.productType?.toLowerCase() === 'espresso machines';
+    if (!typeMatch) return false;
+
+    const vendorLower = line.vendor.toLowerCase();
+    return ruleLookups.some(lookup => lookup.machineVendors.has(vendorLower));
   });
 
   // Find grinder lines - must be product type "Grinders" AND vendor in grinderVendors
   const grinderLines = cartLines.filter(line => {
     if (!line.vendor) return false;
-    if (line.productType?.toLowerCase() !== 'grinders') return false;
-    return sortedRules.some(rule =>
-      rule.grinderVendors.some(
-        gv => gv.toLowerCase() === line.vendor?.toLowerCase(),
-      ),
-    );
+    const typeMatch = line.productType?.toLowerCase() === 'grinders';
+    if (!typeMatch) return false;
+
+    const vendorLower = line.vendor.toLowerCase();
+    return ruleLookups.some(lookup => lookup.grinderVendors.has(vendorLower));
   });
 
   // Match machines with grinders
@@ -182,13 +187,12 @@ export function cartLinesDiscountsGenerateRun(
     if (discountedLineIds.has(machineLine.id)) continue;
 
     // Find the best discount rule for this machine
-    const machineRule = sortedRules.find(rule =>
-      rule.machineVendors.some(
-        mv => mv.toLowerCase() === machineLine.vendor?.toLowerCase(),
-      ),
+    const machineVendorLower = machineLine.vendor?.toLowerCase();
+    const machineRuleLookup = ruleLookups.find(lookup =>
+      lookup.machineVendors.has(machineVendorLower),
     );
 
-    if (!machineRule) continue;
+    if (!machineRuleLookup) continue;
 
     // Find an eligible grinder that hasn't been discounted yet
     for (const grinderLine of grinderLines) {
@@ -196,30 +200,27 @@ export function cartLinesDiscountsGenerateRun(
       if (machineLine.id === grinderLine.id) continue;
 
       // Check if this grinder is eligible for this rule
-      const isEligibleGrinder = machineRule.grinderVendors.some(
-        gv => gv.toLowerCase() === grinderLine.vendor?.toLowerCase(),
-      );
-
-      if (!isEligibleGrinder) continue;
+      const grinderVendorLower = grinderLine.vendor?.toLowerCase();
+      if (!machineRuleLookup.grinderVendors.has(grinderVendorLower)) continue;
 
       // Found a combo! Apply discount to BOTH items
       discountedLineIds.add(machineLine.id);
       discountedLineIds.add(grinderLine.id);
 
-      const discountMessage = `Christmas Combo: ${machineRule.discountPercentage}% off`;
+      const discountMessage = `Christmas Combo: ${machineRuleLookup.rule.discountPercentage}% off`;
 
       // Add discount for machine
       candidates.push({
         message: discountMessage,
         targets: [{ cartLine: { id: machineLine.id } }],
-        value: { percentage: { value: machineRule.discountPercentage } },
+        value: { percentage: { value: machineRuleLookup.rule.discountPercentage } },
       });
 
       // Add discount for grinder
       candidates.push({
         message: discountMessage,
         targets: [{ cartLine: { id: grinderLine.id } }],
-        value: { percentage: { value: machineRule.discountPercentage } },
+        value: { percentage: { value: machineRuleLookup.rule.discountPercentage } },
       });
 
       // Only one grinder per machine
@@ -233,8 +234,14 @@ export function cartLinesDiscountsGenerateRun(
   // or falls back to the global default
   const defaultBundleDiscount = config.bundleConfig?.defaultBundleDiscount ?? 0;
 
-  // Get all product IDs in cart for quick lookup
-  const cartProductIds = new Set(cartLinesWithBundles.map(l => l.productId));
+  // Build a map of product ID -> cart lines for O(1) lookup
+  const productIdToLines = new Map<string, CartLineWithBundle[]>();
+  for (const line of cartLinesWithBundles) {
+    if (!productIdToLines.has(line.productId)) {
+      productIdToLines.set(line.productId, []);
+    }
+    productIdToLines.get(line.productId)!.push(line);
+  }
 
   // Find "parent" products that have bundle_products metafield
   const parentProducts = cartLinesWithBundles.filter(
@@ -244,14 +251,13 @@ export function cartLinesDiscountsGenerateRun(
   for (const parent of parentProducts) {
     // Find bundle products that are also in the cart
     for (const bundleProductId of parent.bundleProductIds) {
-      if (!cartProductIds.has(bundleProductId)) continue;
-
-      // Find the cart line(s) for this bundle product
-      const bundleLines = cartLinesWithBundles.filter(
-        l => l.productId === bundleProductId && !l.hasExcludedTag && !discountedLineIds.has(l.id)
-      );
+      const bundleLines = productIdToLines.get(bundleProductId);
+      if (!bundleLines) continue;
 
       for (const bundleLine of bundleLines) {
+        // Skip if already discounted or has excluded tag
+        if (bundleLine.hasExcludedTag || discountedLineIds.has(bundleLine.id)) continue;
+
         // Read discount from the CHILD product, fall back to default
         const discountPercent = bundleLine.bundleDiscount ?? defaultBundleDiscount;
 
