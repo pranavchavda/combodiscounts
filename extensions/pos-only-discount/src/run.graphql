@@ -1,0 +1,26 @@
+query RunInput {
+  cart {
+    lines {
+      id
+      quantity
+      merchandise {
+        __typename
+        ... on ProductVariant {
+          id
+          product {
+            id
+          }
+        }
+      }
+    }
+    # KEY FIELD for POS detection - null = online checkout, populated = POS checkout
+    retailLocation {
+      id
+    }
+  }
+  discountNode {
+    metafield(namespace: "app--302124335105--christmas-combos", key: "pos-config") {
+      value
+    }
+  }
+}

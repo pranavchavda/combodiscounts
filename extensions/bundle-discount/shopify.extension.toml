@@ -1,0 +1,17 @@
+api_version = "2025-04"
+
+[[extensions]]
+name = "Bundle Discount"
+handle = "bundle-discount"
+type = "function"
+uid = "208e9edf-8b9b-6b74-3f3a-539fdede2328f859a084"
+description = "Applies discounts to bundle products when parent product is in cart"
+
+  [[extensions.targeting]]
+  target = "cart.lines.discounts.generate.run"
+  input_query = "src/cart_lines_discounts_generate_run.graphql"
+  export = "cart-lines-discounts-generate-run"
+
+  [extensions.build]
+  command = ""
+  path = "dist/function.wasm"

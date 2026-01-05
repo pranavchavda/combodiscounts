@@ -1,0 +1,4 @@
+{
+  "name": "POS-Only Discount",
+  "description": "Applies discount codes only at POS checkout, not online"
+}

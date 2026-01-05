@@ -12,14 +12,14 @@ import {
   Icon,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
-import { DiscountIcon, ProductIcon } from "@shopify/polaris-icons";
+import { DiscountIcon, ProductIcon, LocationIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }) => {
   const { admin } = await authenticate.admin(request);
 
-  // Query both discounts directly by title (parallel requests)
-  const [comboResponse, bundleResponse] = await Promise.all([
+  // Query all discounts directly by title (parallel requests)
+  const [comboResponse, bundleResponse, posResponse] = await Promise.all([
     admin.graphql(`
       query {
         discountNodes(first: 5, query: "title:Christmas Combo Deal") {
@@ -49,22 +49,41 @@ export const loader = async ({ request }) => {
           }
         }
       }
+    `),
+    admin.graphql(`
+      query {
+        discountNodes(first: 5, query: "title:POS-Only Discount") {
+          nodes {
+            id
+            discount {
+              ... on DiscountAutomaticApp {
+                title
+                status
+              }
+            }
+          }
+        }
+      }
     `)
   ]);
 
-  const [comboData, bundleData] = await Promise.all([
+  const [comboData, bundleData, posData] = await Promise.all([
     comboResponse.json(),
-    bundleResponse.json()
+    bundleResponse.json(),
+    posResponse.json()
   ]);
 
   const comboNodes = comboData?.data?.discountNodes?.nodes || [];
   const bundleNodes = bundleData?.data?.discountNodes?.nodes || [];
+  const posNodes = posData?.data?.discountNodes?.nodes || [];
 
   // Prioritize ACTIVE discount if multiple exist
   const comboDiscount = comboNodes.find(n => n.discount?.status === "ACTIVE")
     || comboNodes[comboNodes.length - 1];
   const bundleDiscount = bundleNodes.find(n => n.discount?.status === "ACTIVE")
     || bundleNodes[bundleNodes.length - 1];
+  const posDiscount = posNodes.find(n => n.discount?.status === "ACTIVE")
+    || posNodes[posNodes.length - 1];
 
   return json({
     comboDiscount: comboDiscount ? {
@@ -74,6 +93,10 @@ export const loader = async ({ request }) => {
     bundleDiscount: bundleDiscount ? {
       status: bundleDiscount.discount.status,
       title: bundleDiscount.discount.title,
+    } : null,
+    posDiscount: posDiscount ? {
+      status: posDiscount.discount.status,
+      title: posDiscount.discount.title,
     } : null,
   });
 };
@@ -124,7 +147,7 @@ function DiscountCard({ title, description, status, linkTo, icon }) {
 }
 
 export default function Index() {
-  const { comboDiscount, bundleDiscount } = useLoaderData();
+  const { comboDiscount, bundleDiscount, posDiscount } = useLoaderData();
 
   return (
     <Page>
@@ -139,8 +162,8 @@ export default function Index() {
                 </Text>
                 <Text as="p" tone="subdued">
                   Automatically apply discounts when customers purchase product combinations.
-                  Configure combo rules for espresso machines + grinders, or set up dynamic
-                  bundle discounts based on product metafields.
+                  Configure combo rules for espresso machines + grinders, set up dynamic
+                  bundle discounts based on product metafields, or create POS-only discounts.
                 </Text>
               </BlockStack>
             </Card>
@@ -166,6 +189,14 @@ export default function Index() {
                 status={bundleDiscount?.status}
                 linkTo="/app/bundle-discounts"
                 icon={ProductIcon}
+              />
+
+              <DiscountCard
+                title="POS-Only Discount"
+                description="Discounts that only apply to Point of Sale transactions"
+                status={posDiscount?.status}
+                linkTo="/app/pos-discount"
+                icon={LocationIcon}
               />
             </BlockStack>
           </Layout.Section>

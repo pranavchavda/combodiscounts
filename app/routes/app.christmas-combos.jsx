@@ -81,12 +81,16 @@ export const loader = async ({ request }) => {
 
   // Try to get config from discount metafield first, fall back to app installation
   let finalConfig = config;
+  console.log("DEBUG: Discount metafield raw:", christmasComboDiscount?.metafield);
   if (christmasComboDiscount?.metafield?.value) {
     try {
       finalConfig = JSON.parse(christmasComboDiscount.metafield.value);
+      console.log("DEBUG: Parsed config from discount metafield, discount %:", finalConfig.comboRules?.[0]?.discountPercentage);
     } catch (e) {
       console.error("Failed to parse discount metafield:", e);
     }
+  } else {
+    console.log("DEBUG: No discount metafield found, using app installation config");
   }
 
   return json({

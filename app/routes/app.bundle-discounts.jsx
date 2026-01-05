@@ -111,15 +111,15 @@ export const action = async ({ request }) => {
       const functionsData = await functionsResponse.json();
       const functions = functionsData?.data?.shopifyFunctions?.nodes || [];
 
-      // Find our discount function
+      // Find our bundle discount function
       const discountFunction = functions.find(fn =>
         (fn.apiType === "cart_discounts" || fn.apiType === "discounts" || fn.apiType === "product_discounts") &&
-        (fn.app?.title?.toLowerCase().includes("christmas") || fn.title?.toLowerCase().includes("christmas"))
+        fn.title?.toLowerCase().includes("bundle")
       );
 
       if (!discountFunction) {
         const anyMatchingFunction = functions.find(fn =>
-          fn.app?.title?.toLowerCase().includes("christmas") || fn.title?.toLowerCase().includes("christmas")
+          fn.title?.toLowerCase().includes("bundle")
         );
 
         if (!anyMatchingFunction) {
@@ -397,7 +397,7 @@ export const action = async ({ request }) => {
           id: discountId,
           metafields: [
             {
-              namespace: "$app:christmas-combos",
+              namespace: "$app:bundle-discount",
               key: "config",
               type: "json",
               value: JSON.stringify(fullConfig),

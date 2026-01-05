@@ -12,30 +12,18 @@ interface ComboRule {
   discountPercentage: number;
 }
 
-interface BundleConfig {
-  defaultBundleDiscount: number;
-}
-
 interface Configuration {
   comboRules: ComboRule[];
   excludedTags: string[];
-  bundleConfig?: BundleConfig;
 }
 
-// Default configuration matching the Christmas Combos requirements
+// Default configuration - 5% for live promo
 const DEFAULT_CONFIG: Configuration = {
   comboRules: [
     {
-      // 15% tier - premium brands
-      machineVendors: ['Bezzera', 'Sanremo', 'Rancilio', 'Quick Mill', 'Slayer'],
-      grinderVendors: ['Eureka', 'Eureka Oro', 'Mahlkonig', 'Anfim', 'HeyCafe', 'Mazzer', 'ECM', 'Profitec'],
-      discountPercentage: 15,
-    },
-    {
-      // 10% tier - standard brands
-      machineVendors: ['ECM', 'Profitec', 'Technivorm'],
-      grinderVendors: ['Eureka', 'Eureka Oro', 'Mahlkonig', 'Anfim', 'HeyCafe', 'Mazzer', 'ECM', 'Profitec'],
-      discountPercentage: 10,
+      machineVendors: ['Magister', 'Ascaso', 'Bezzera', 'ECM', 'Flair Espresso', 'La Marzocco', 'Nuova Simonelli', 'Nurri', 'Profitec', 'Quick Mill', 'Rancilio', 'Sanremo', 'Slayer', 'Solis', 'Victoria Arduino'],
+      grinderVendors: ['Mahlkonig', 'Anfim', 'Baratza', 'Breville', 'Ditting', 'ECM', 'Eureka', 'Eureka Oro', 'HeyCafe', 'La Marzocco', 'Mazzer', 'Nuova Simonelli', 'Profitec', 'Rancilio', 'Sanremo', 'Technivorm'],
+      discountPercentage: 5,
     },
   ],
   excludedTags: ['no-combo-discount', 'clearance', 'bundle', 'openbox'],
@@ -45,14 +33,6 @@ interface CartLineWithVendor {
   id: string;
   vendor: string | null;
   productType: string | null;
-  hasExcludedTag: boolean;
-}
-
-interface CartLineWithBundle {
-  id: string;
-  productId: string;
-  bundleProductIds: string[];
-  bundleDiscount: number | null;
   hasExcludedTag: boolean;
 }
 
@@ -85,8 +65,6 @@ export function cartLinesDiscountsGenerateRun(
           vendor: string | null;
           productType: string | null;
           hasAnyTag: boolean;
-          bundleProducts?: { value: string } | null;
-          bundleDiscount?: { value: string } | null;
         };
       };
       return {
@@ -98,49 +76,6 @@ export function cartLinesDiscountsGenerateRun(
     })
     // Filter out items with excluded tags
     .filter(line => !line.hasExcludedTag);
-
-  // Parse cart lines for bundle discount matching
-  const cartLinesWithBundles: CartLineWithBundle[] = input.cart.lines
-    .filter(line => line.merchandise.__typename === 'ProductVariant')
-    .map(line => {
-      const variant = line.merchandise as {
-        __typename: 'ProductVariant';
-        id: string;
-        product: {
-          id: string;
-          hasAnyTag: boolean;
-          bundleProducts?: { value: string } | null;
-          bundleDiscount?: { value: string } | null;
-        };
-      };
-
-      // Parse bundle_products metafield (list.product_reference format: ["gid://shopify/Product/123", ...])
-      let bundleProductIds: string[] = [];
-      if (variant.product.bundleProducts?.value) {
-        try {
-          bundleProductIds = JSON.parse(variant.product.bundleProducts.value);
-        } catch {
-          bundleProductIds = [];
-        }
-      }
-
-      // Parse bundle_discount metafield (number_decimal)
-      let bundleDiscount: number | null = null;
-      if (variant.product.bundleDiscount?.value) {
-        const parsed = parseFloat(variant.product.bundleDiscount.value);
-        if (!isNaN(parsed)) {
-          bundleDiscount = parsed;
-        }
-      }
-
-      return {
-        id: line.id,
-        productId: variant.product.id,
-        bundleProductIds,
-        bundleDiscount,
-        hasExcludedTag: variant.product.hasAnyTag,
-      };
-    });
 
   // Find combo matches and apply discounts
   const discountedLineIds = new Set<string>();
@@ -225,52 +160,6 @@ export function cartLinesDiscountsGenerateRun(
 
       // Only one grinder per machine
       break;
-    }
-  }
-
-  // ===== BUNDLE DISCOUNTS =====
-  // Apply discounts to bundle products when the parent product is in cart
-  // The discount percentage is read from the CHILD (bundle product) via custom.bundle_discount
-  // or falls back to the global default
-  const defaultBundleDiscount = config.bundleConfig?.defaultBundleDiscount ?? 0;
-
-  // Build a map of product ID -> cart lines for O(1) lookup
-  const productIdToLines = new Map<string, CartLineWithBundle[]>();
-  for (const line of cartLinesWithBundles) {
-    if (!productIdToLines.has(line.productId)) {
-      productIdToLines.set(line.productId, []);
-    }
-    productIdToLines.get(line.productId)!.push(line);
-  }
-
-  // Find "parent" products that have bundle_products metafield
-  const parentProducts = cartLinesWithBundles.filter(
-    l => l.bundleProductIds.length > 0 && !l.hasExcludedTag
-  );
-
-  for (const parent of parentProducts) {
-    // Find bundle products that are also in the cart
-    for (const bundleProductId of parent.bundleProductIds) {
-      const bundleLines = productIdToLines.get(bundleProductId);
-      if (!bundleLines) continue;
-
-      for (const bundleLine of bundleLines) {
-        // Skip if already discounted or has excluded tag
-        if (bundleLine.hasExcludedTag || discountedLineIds.has(bundleLine.id)) continue;
-
-        // Read discount from the CHILD product, fall back to default
-        const discountPercent = bundleLine.bundleDiscount ?? defaultBundleDiscount;
-
-        if (discountPercent <= 0) continue;
-
-        discountedLineIds.add(bundleLine.id);
-
-        candidates.push({
-          message: `Bundle Discount: ${discountPercent}% off`,
-          targets: [{ cartLine: { id: bundleLine.id } }],
-          value: { percentage: { value: discountPercent } },
-        });
-      }
     }
   }
 

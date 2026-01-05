@@ -47,7 +47,8 @@ Located at `extensions/christmas-combos-discount/`:
 The function reads combo rules from the discount's metafield, matches products by vendor and type (Espresso Machines/Grinders), excludes items with specific tags (no-combo-discount, clearance, bundle, openbox), and applies discounts to matched pairs.
 
 ### Data Storage
-- **App configuration**: Stored in `currentAppInstallation` metafield (namespace: `christmas-combos`, key: `config`)
+- **Discount configuration**: Stored on the DiscountAutomaticNode metafield (namespace: `$app`, key: `function-configuration`)
+- **App installation backup**: Also stored on `currentAppInstallation` metafield (same namespace/key)
 - **Sessions**: Prisma with SQLite (development) - single Session model
 
 ### Configuration Schema
@@ -78,6 +79,50 @@ The function reads combo rules from the discount's metafield, matches products b
 ## Environment Variables
 
 Required: `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_APP_URL`, `SCOPES`
+
+## POS-Only Discount Extension
+
+**Status:** Complete - ready to deploy
+
+**Extension Location:** `extensions/pos-only-discount/`
+
+**Purpose:** A code-based discount that only works at POS checkout (not online). When a discount code using this function is entered at POS, it applies the configured discount. Online checkout gets no discount.
+
+**How It Works:**
+- Uses `retailLocation` field from Cart input to detect POS vs online
+- If `retailLocation` is null (online checkout) → returns empty, no discount
+- If `retailLocation` is populated (POS checkout) → applies configured discount
+- Requires API version 2025-07 for `retailLocation` field
+
+**Config Schema (stored in discount metafield):**
+```typescript
+{
+  discountType: 'fixedAmount' | 'percentage',
+  value: string,        // "10.00" for fixed, "10" for percentage
+  minQuantity: number,
+  collections: string[], // Reserved for future use
+  message: string
+}
+```
+
+**Admin UI Route:** `app/routes/app.pos-discount.jsx`
+
+**Important:** This is SEPARATE from the `christmas-combos-discount` extension which handles automatic combo/bundle discounts.
+
+## Resolved: Function Metafield Reading (December 2025)
+
+**Status:** FIXED
+
+**Root Cause:** Two discounts from the same app were both active - the Bundle discount was applying 5% and masking the Christmas Combo Deal. Deactivating the Bundle discount resolved the conflict.
+
+**Current Config:**
+- Namespace: `$app:christmas-combos` (resolves to `app--302124335105--christmas-combos`)
+- Key: `config`
+- Working as of version christmas-combos-21
+
+### Lesson Learned
+
+When debugging discount issues, always check for **multiple active discounts from the same app** that may conflict with each other.
 
 ## Production Deployment
 
