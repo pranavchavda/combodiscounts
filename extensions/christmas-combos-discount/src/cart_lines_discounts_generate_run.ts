@@ -142,7 +142,7 @@ export function cartLinesDiscountsGenerateRun(
       discountedLineIds.add(machineLine.id);
       discountedLineIds.add(grinderLine.id);
 
-      const discountMessage = `Christmas Combo: ${machineRuleLookup.rule.discountPercentage}% off`;
+      const discountMessage = `Combo Discount: ${machineRuleLookup.rule.discountPercentage}% off`;
 
       // Add discount for machine
       candidates.push({
