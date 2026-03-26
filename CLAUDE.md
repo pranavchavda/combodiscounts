@@ -140,8 +140,8 @@ rsync -avz --delete \
   --exclude 'node_modules' \
   --exclude '.git' \
   --exclude '.env' \
-  --exclude 'prisma/*.db' \
-  --exclude 'prisma/*.db-journal' \
+  --exclude 'prisma/dev.sqlite' \
+  --exclude 'prisma/dev.sqlite-journal' \
   ./ root@139.177.197.236:/var/www/christmas-combos/
 
 # 2. SSH into server, rebuild, and restart

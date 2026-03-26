@@ -1,0 +1,19 @@
+{
+  "name": "sweetbird-sample-picker",
+  "version": "0.0.1",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "build": "shopify app build"
+  },
+  "dependencies": {
+    "@shopify/ui-extensions": "2025.4.0",
+    "@shopify/ui-extensions-react": "2025.4.0",
+    "react": "^18.2.0",
+    "react-reconciler": "^0.29.2"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "typescript": "^5.3.0"
+  }
+}
