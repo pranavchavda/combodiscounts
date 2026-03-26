@@ -1,0 +1,31 @@
+api_version = "2025-04"
+
+[[extensions]]
+name = "Sweetbird Free Sample Picker"
+handle = "sweetbird-sample-picker"
+uid = "d74808a7-168c-3bef-3555-f5d29f54d05bb401b8c4"
+type = "ui_extension"
+
+  [[extensions.targeting]]
+  module = "./src/Checkout.tsx"
+  target = "purchase.checkout.block.render"
+
+  [extensions.capabilities]
+  network_access = true
+
+  [[extensions.metafields]]
+  namespace = "$app:sweetbird-samples"
+  key = "config"
+
+  [extensions.settings]
+    [[extensions.settings.fields]]
+    key = "app_url"
+    type = "single_line_text_field"
+    name = "App URL"
+    description = "The URL of the Sweetbird Combos app backend (e.g. https://combos.idrinkcoffee.com)"
+
+    [[extensions.settings.fields]]
+    key = "offer_title"
+    type = "single_line_text_field"
+    name = "Offer Title"
+    description = "Heading shown above the picker"

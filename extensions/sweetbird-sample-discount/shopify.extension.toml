@@ -1,0 +1,21 @@
+api_version = "2025-04"
+
+[[extensions]]
+name = "Sweetbird Sample Discount"
+handle = "sweetbird-sample-discount"
+uid = "1eddd3fd-a09e-065d-2420-125061d0bd365421b9ef"
+type = "function"
+description = "Applies 100% discount to free sample cart lines (identified by _free_sample attribute)"
+
+  [[extensions.targeting]]
+  target = "cart.lines.discounts.generate.run"
+  input_query = "src/run.graphql"
+  export = "run"
+
+  [extensions.build]
+  command = ""
+  path = "dist/function.wasm"
+
+  [extensions.ui.paths]
+  create = "/app/sweetbird-samples"
+  details = "/app/sweetbird-samples"
