@@ -303,6 +303,9 @@ export default function SweetbirdSamples() {
   );
   const [collections, setCollections] = useState(initialCollections ?? []);
   const [syrups, setSyrups] = useState(initialConfig.syrups ?? []);
+  const [minCartValue, setMinCartValue] = useState(
+    initialConfig.minCartValue ?? 0,
+  );
 
 
   const openCollectionPicker = useCallback(async () => {
@@ -358,6 +361,7 @@ export default function SweetbirdSamples() {
       qualifyingCollectionIds: collections.map((c) => c.id),
       qualifyingCollectionTitles: collections.map((c) => c.title),
       syrups,
+      minCartValue: Number(minCartValue) || 0,
     };
 
     const formData = new FormData();
@@ -372,7 +376,8 @@ export default function SweetbirdSamples() {
     offerTitle !== initialConfig.offerTitle ||
     JSON.stringify(collections.map((c) => c.id)) !==
       JSON.stringify(initialConfig.qualifyingCollectionIds) ||
-    JSON.stringify(syrups) !== JSON.stringify(initialConfig.syrups);
+    JSON.stringify(syrups) !== JSON.stringify(initialConfig.syrups) ||
+    Number(minCartValue) !== (initialConfig.minCartValue ?? 0);
 
   return (
     <Page>
@@ -458,6 +463,16 @@ export default function SweetbirdSamples() {
                       {active ? "Active" : "Inactive"}
                     </Badge>
                   </InlineStack>
+                  <TextField
+                    label="Minimum cart value ($)"
+                    type="number"
+                    value={String(minCartValue)}
+                    onChange={(v) => setMinCartValue(v)}
+                    autoComplete="off"
+                    min={0}
+                    helpText="Only show the free sample offer when cart subtotal is at or above this amount. Set to 0 to show for all carts."
+                    prefix="$"
+                  />
                   <Text tone="subdued">
                     When active, customers who qualify will see a syrup sample picker at
                     checkout. A companion discount function automatically zeroes out the
