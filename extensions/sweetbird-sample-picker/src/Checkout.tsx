@@ -27,6 +27,7 @@ interface SweetbirdConfig {
   offerTitle: string;
   qualifyingCollectionIds: string[];
   syrups: SyrupVariant[];
+  minCartValue?: number;
 }
 
 export default reactExtension(
@@ -64,6 +65,21 @@ function SweetbirdSamplePicker() {
 
   if (!configLoaded || !config || !config.active || !config.syrups || config.syrups.length === 0) {
     return null;
+  }
+
+  // Check minimum cart value (exclude free sample lines from the total)
+  const minCartValue = config.minCartValue ?? 0;
+  if (minCartValue > 0) {
+    const cartTotal = cartLines.reduce((sum, line) => {
+      const isSample = line.attributes?.some(
+        (a) => a.key === "_free_sample" && a.value === "true",
+      );
+      if (isSample) return sum;
+      return sum + Number(line.cost.totalAmount.amount);
+    }, 0);
+    if (cartTotal < minCartValue) {
+      return null;
+    }
   }
 
   const sampleLine = cartLines.find((line) =>
